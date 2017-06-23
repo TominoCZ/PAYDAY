@@ -1,3 +1,3 @@
 @ECHO OFF
-call gradlew build
+call gradlew build --stacktrace
 pause

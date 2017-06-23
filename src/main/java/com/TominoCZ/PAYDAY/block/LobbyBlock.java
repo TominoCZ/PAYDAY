@@ -1,10 +1,10 @@
 package com.TominoCZ.PAYDAY.block;
 
-import java.util.List;
 import java.util.UUID;
 
 import com.TominoCZ.PAYDAY.PAYDAY;
-import com.TominoCZ.PAYDAY.packet.LobbyDestroyPacket;
+import com.TominoCZ.PAYDAY.PlayerData;
+import com.TominoCZ.PAYDAY.util.UUIDUtil;
 
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
@@ -35,6 +35,7 @@ public class LobbyBlock extends BlockContainer {
 		// this.setBlockTextureName(this.getIcon(0, meta).getIconName());
 		this.isBlockContainer = true;
 		this.setBlockName("Lobby");
+		this.setBlockUnbreakable();
 	}
 
 	@Override
@@ -83,23 +84,19 @@ public class LobbyBlock extends BlockContainer {
 
 	@Override
 	public void breakBlock(World world, int x, int y, int z, Block b, int i) {
-		
 		LobbyTileEntity tile = (LobbyTileEntity) world.getTileEntity(x, y, z);
-
+		PlayerData data;
+		EntityPlayer player;
+		
 		for (UUID uuid : tile.players) {
-			for (EntityPlayer p : (List<EntityPlayer>) world.playerEntities) {
-				if (uuid.equals(p.getUniqueID())) {
-					p.getEntityData().setBoolean("inPAYDAYLobby", false);
-					p.getEntityData().setInteger("PAYDAYLobbyX", 0);
-					p.getEntityData().setInteger("PAYDAYLobbyY", -1);
-					p.getEntityData().setInteger("PAYDAYLobbyZ", 0);
-					break;
-				}
-			}
+			player = UUIDUtil.getPlayerFromProfileUUID(world, uuid);
+			data = PlayerData.get(player);
+			data.setInLobby(false);
+			data.setReady(false);
+			
+			data.sendToServer();
 		}
-
-		PAYDAY.INSTANCE.sendToServer(new LobbyDestroyPacket(x, y, z, tile.players));
-
+		
 		tile.players.clear();
 		
 		super.breakBlock(world, x, y, z, b, i);

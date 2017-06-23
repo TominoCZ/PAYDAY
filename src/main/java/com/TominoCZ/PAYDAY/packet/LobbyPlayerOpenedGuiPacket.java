@@ -4,11 +4,12 @@ import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import io.netty.buffer.ByteBuf;
 
 public class LobbyPlayerOpenedGuiPacket implements IMessage {
-	public LobbyPlayerOpenedGuiPacket() {
-	}
-
 	public int x, y, z;
-
+	
+	public LobbyPlayerOpenedGuiPacket(){
+		
+	}
+	
 	public LobbyPlayerOpenedGuiPacket(int x, int y, int z) {
 		this.x = x;
 		this.y = y;

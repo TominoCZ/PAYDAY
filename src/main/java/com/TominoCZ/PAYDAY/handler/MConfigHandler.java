@@ -12,7 +12,7 @@ import com.TominoCZ.PAYDAY.PAYDAY;
 
 import scala.reflect.io.Directory;
 
-public class ConfigHandler {
+public class MConfigHandler {
 	static FileInputStream fis;
 	static InputStreamReader isr;
 	static BufferedReader br;

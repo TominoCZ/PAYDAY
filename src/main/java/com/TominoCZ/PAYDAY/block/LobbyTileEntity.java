@@ -4,6 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.TominoCZ.PAYDAY.PAYDAY;
+import com.TominoCZ.PAYDAY.PlayerData;
+import com.TominoCZ.PAYDAY.packet.PacketSyncTileEntityServer;
+import com.TominoCZ.PAYDAY.util.UUIDUtil;
+
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -13,12 +18,17 @@ import net.minecraft.world.World;
 public class LobbyTileEntity extends TileEntity {
 	public List<UUID> players = new ArrayList();
 
-	public LobbyTileEntity() {
+	public boolean isGameLive = false;
 
+	public UUID lobbyHost;
+
+	public LobbyTileEntity() {
+		
 	}
 
 	public LobbyTileEntity(World w) {
 		this.worldObj = w;
+		check();
 	}
 
 	@Override
@@ -31,7 +41,7 @@ public class LobbyTileEntity extends TileEntity {
 			list.appendTag(createUUIDTag(players.get(i)));
 
 		compound.setTag("playerList", list);
-
+		compound.setBoolean("isGameLive", isGameLive);
 		worldObj.notifyBlockChange(xCoord, yCoord, zCoord, worldObj.getBlock(xCoord, yCoord, zCoord));
 	}
 
@@ -40,6 +50,7 @@ public class LobbyTileEntity extends TileEntity {
 		super.readFromNBT(compound);
 
 		NBTTagList list = compound.getTagList("playerList", 10);
+		isGameLive = compound.getBoolean("isGameLive");
 
 		players.clear();
 		UUID uuid;
@@ -49,7 +60,7 @@ public class LobbyTileEntity extends TileEntity {
 
 			if (worldObj != null && worldObj.playerEntities != null) {
 				for (EntityPlayer player : (List<EntityPlayer>) worldObj.playerEntities) {
-					if (player.getUniqueID() == uuid) {
+					if (player.getGameProfile().getId() == uuid) {
 						players.add(uuid);
 						break;
 					}
@@ -70,60 +81,133 @@ public class LobbyTileEntity extends TileEntity {
 	}
 
 	public void addPlayer(EntityPlayer player) {
-		if (!players.contains(player.getUniqueID()) && players.size() < 4
-				&& !player.getEntityData().getBoolean("inPAYDAYLobby")) {
-			players.add(player.getUniqueID());
+		if (!players.contains(player.getGameProfile().getId()) && players.size() < 4
+				&& !PlayerData.get(player).isInLobby()) {
+
+			PlayerData data = PlayerData.get(player);
+
+			data.setInLobby(true);
+			data.setReady(false);
+			// data.setLobbyHash(hashCode());
+
+			data.sendToServer();
+
+			players.add(player.getGameProfile().getId());
+
+			if (lobbyHost == null)
+				lobbyHost = players.get(0);
 
 			check();
 
 			markDirty();
+
+			syncTileEntity();
 		}
 	}
 
 	public void removePlayer(EntityPlayer player) {
-		if (players.contains(player.getUniqueID())) {
+		if (players.contains(player.getGameProfile().getId())) {
+			players.remove(player.getGameProfile().getId());
 
-			players.remove(player.getUniqueID());
+			if (player.getGameProfile().getId().equals(lobbyHost))
+				lobbyHost = null;
+
+			PlayerData data = PlayerData.get(player);
+
+			data.setInLobby(false);
+			data.setReady(false);
+			// data.setLobbyHash(hashCode());
+
+			data.sendToServer();
 
 			check();
 
 			markDirty();
+
+			syncTileEntity();
 		}
+	}
+
+	public UUID getLobbyHost() {
+		return lobbyHost;
+	}
+
+	public void setLobbyHost(UUID player) {
+		lobbyHost = player;
+
+		syncTileEntity();
+	}
+
+	public boolean isHost(EntityPlayer player) {
+		return lobbyHost == null ? false : lobbyHost.equals(player.getGameProfile().getId());
 	}
 
 	public void check() {
 		List<UUID> toRemove = new ArrayList();
 
+		EntityPlayer plr;
+		PlayerData data;
+
 		for (UUID id : players) {
-			boolean found = false;
+			if ((plr = UUIDUtil.getPlayerFromProfileUUID(worldObj, id)) == null
+					|| !(worldObj.getBlock(xCoord, yCoord, zCoord) instanceof LobbyBlock)
+					|| !worldObj.getTileEntity(xCoord, yCoord, zCoord).equals(this)) {
 
-			for (EntityPlayer p : (List<EntityPlayer>) worldObj.playerEntities) {
-				if (p.getUniqueID().equals(id))
-					found = true;
-			}
+				if (plr != null) {
+					data = PlayerData.get(plr);
+					data.setInLobby(false);
+					data.setReady(false);
+				}
 
-			if (!found)
 				toRemove.add(id);
+			}
 		}
 
 		players.removeAll(toRemove);
 
+		if (toRemove.contains(lobbyHost) || !players.contains(lobbyHost)) {
+			plr = UUIDUtil.getPlayerFromProfileUUID(getWorldObj(), lobbyHost);
+
+			if (plr != null) {
+				data = PlayerData.get(plr);
+				data.setInLobby(false);
+				data.setReady(false);
+			}
+			lobbyHost = null;
+		}
+
+		if (lobbyHost == null && players.size() > 0)
+			lobbyHost = players.get(0);
+		
 		if (worldObj != null)
 			worldObj.setBlockMetadataWithNotify(xCoord, yCoord, zCoord, this.blockMetadata = players.size(), 2);
 	}
 
-	public List<EntityPlayer> getPlayers() {
-		List<EntityPlayer> l = new ArrayList();
+	public boolean isGameLive() {
+		return isGameLive;
+	}
 
-		for (EntityPlayer player : (List<EntityPlayer>) worldObj.playerEntities) {
-			for (UUID uuid : players) {
-				if (uuid.equals(player.getUniqueID())) {
-					l.add(player);
-					break;
-				}
+	public void setGameLive(boolean live) {
+		isGameLive = live;
+
+		syncTileEntity();
+	}
+
+	public boolean allReady() {
+		PlayerData data;
+		for (UUID uuid : players) {
+			if (lobbyHost != null && !uuid.equals(lobbyHost)) {
+				data = PlayerData.get(UUIDUtil.getPlayerFromProfileUUID(worldObj, uuid));
+
+				if (!data.isReady())
+					return false;
 			}
 		}
-		
-		return l;
+
+		return true;
+	}
+
+	public void syncTileEntity() {
+		PAYDAY.INSTANCE.sendToServer(new PacketSyncTileEntityServer(this));
 	}
 }
